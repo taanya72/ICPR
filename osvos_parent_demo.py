@@ -21,7 +21,7 @@ from dataset import Dataset
 gpu_id = 0
 
 # Training parameters
-imagenet_ckpt = 'models/OSVOS_parent/mask_rcnn.ckpt'
+imagenet_ckpt = os.path.join(root_folder, 'models/OSVOS_parent/resnet_v1_101.ckpt')
 logs_path = os.path.join(root_folder, 'models', 'OSVOS_parent')
 store_memory = False
 data_aug = False
@@ -39,7 +39,7 @@ values = [ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate, ini_lea
 
 # Define Dataset
 train_file = 'train_parent.txt'
-dataset = Dataset(train_file, None, './SMOKE', store_memory=store_memory, data_aug=data_aug)
+dataset = Dataset(train_file, None, './', store_memory=store_memory, data_aug=data_aug)
 
 # Train the network
 with tf.Graph().as_default():
