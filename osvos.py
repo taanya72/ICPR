@@ -355,8 +355,8 @@ def class_balanced_cross_entropy_loss(output, label):
     loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
         1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
 
-    loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
-    loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
+    loss_pos = tf.reduce_mean(-tf.multiply(labels, loss_val))
+    loss_neg = tf.reduce_mean(-tf.multiply(1.0 - labels, loss_val))
 
     final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
 
@@ -567,8 +567,9 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
     # Prepare the input data
     # set a shape for debugging the feature shapes
-    img_height, img_width = 576, 720
-    # img_height, img_width = 480, 720
+    # img_height, img_width = 576, 720
+    # img_height, img_width = 480, 854
+    img_height, img_width = None, None
     input_image = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
     input_label = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
 
@@ -713,7 +714,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 image = np.stack(batch_image, axis=0)
                 label = np.stack(batch_label, axis=0)
                 label = np.expand_dims(label, axis=-1)
-                label = 1 - label
+                #label = 1 - label
                 # image = preprocess_img(batch_image[0])
                 # label = preprocess_labels(batch_label[0])
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
@@ -750,7 +751,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
 def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                  display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                 config=None, test_image_path=None, ckpt_name="osvos"):
+                 config=None, test_image_path=None, ckpt_name="osvos", backbone='vgg'):
     """Train OSVOS parent network
     Args:
     See _train()
@@ -759,7 +760,7 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
     finetune = 0
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
-           ckpt_name)
+           ckpt_name, backbone=backbone)
 
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
