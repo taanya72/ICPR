@@ -19,7 +19,7 @@ from PIL import Image
 import six
 import IPython
 slim = tf.contrib.slim
-from tensorflow.contrib.slim.nets import resnet_v1
+from tensorflow.contrib.slim.nets import resnet_v2
 from tensorflow.contrib.slim.nets import resnet_utils
 
 
@@ -185,12 +185,12 @@ def osvos_resnet(inputs, scope='osvos_resnet'):
         #         # net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
         #         net_5 = resnet_utils.stack_blocks_dense(net_4, [block4], None, False)
         #         net_5 = slim.batch_norm(net_5, activation_fn=tf.nn.relu, scope='postnorm')
-        with slim.arg_scope(resnet_v1.resnet_arg_scope()):
-            net, end_points = resnet_v1.resnet_v1_101(inputs, None, is_training=False)
-            net_2 =end_points['osvos_resnet/resnet_v1_101/block1']
-            net_3 = end_points['osvos_resnet/resnet_v1_101/block2']
-            net_4 = end_points['osvos_resnet/resnet_v1_101/block3']
-            net_5 = end_points['osvos_resnet/resnet_v1_101/block4']
+        with slim.arg_scope(resnet_v2.resnet_arg_scope()):
+            net, end_points = resnet_v2.resnet_v2_101(inputs, None, is_training=False)
+            net_2 =end_points['osvos_resnet/resnet_v2_101/block1']
+            net_3 = end_points['osvos_resnet/resnet_v2_101/block2']
+            net_4 = end_points['osvos_resnet/resnet_v2_101/block3']
+            net_5 = end_points['osvos_resnet/resnet_v2_101/block4']
             # print(net_2, net_3, net_4, net_5, net)
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d], activation_fn=None):
@@ -460,9 +460,10 @@ def load_resnet_coco(ckpt_path):
     #     print(l)
     for v in var_to_shape_map:
         if "conv" in v:
-            # print(v)
-            # print(slim.get_model_variables(v.replace("resnet_v1_101", "osvos_resnet")))
-            vars_corresp[v] = slim.get_model_variables(v.replace("resnet_v1_101", "osvos_resnet/resnet_v1_101"))[0]
+            var = slim.get_model_variables(v.replace("resnet_v2_101", "osvos_resnet/resnet_v2_101"))
+            if len(var) == 0:
+                continue
+            vars_corresp[v] = var[0]
     init_fn = slim.assign_from_checkpoint_fn(
         ckpt_path,
         vars_corresp)
@@ -709,8 +710,12 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             for _ in range(0, iter_mean_grad):
                 batch_image, batch_label = dataset.next_batch(batch_size, 'train')
                 # image shape (1, 576, 720, 3)
-                image = preprocess_img(batch_image[0])
-                label = preprocess_labels(batch_label[0])
+                image = np.stack(batch_image, axis=0)
+                label = np.stack(batch_label, axis=0)
+                label = np.expand_dims(label, axis=-1)
+                label = 1 - label
+                # image = preprocess_img(batch_image[0])
+                # label = preprocess_labels(batch_label[0])
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
                                    feed_dict={input_image: image, input_label: label})
                 batch_loss = run_res[0]

@@ -21,9 +21,9 @@ from dataset import Dataset
 gpu_id = 0
 
 # Training parameters
-imagenet_ckpt = os.path.join(root_folder, 'models/OSVOS_parent/resnet_v1_101.ckpt')
+imagenet_ckpt = os.path.join(root_folder, 'models/OSVOS_parent/resnet_v2_101.ckpt')
 logs_path = os.path.join(root_folder, 'models', 'OSVOS_parent')
-store_memory = False
+store_memory = True
 data_aug = False
 iter_mean_grad = 10
 max_training_iters_1 = 15000
@@ -31,7 +31,7 @@ max_training_iters_2 = 30000
 max_training_iters_3 = 50000
 save_step = 5000
 test_image = None
-display_step = 100
+display_step = 1
 ini_learning_rate = 1e-8
 boundaries = [10000, 15000, 25000, 30000, 40000]
 values = [ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate,
@@ -48,7 +48,7 @@ with tf.Graph().as_default():
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
         osvos.train_parent(dataset, imagenet_ckpt, 1, learning_rate, logs_path, max_training_iters_1, save_step,
                            display_step, global_step, iter_mean_grad=iter_mean_grad, test_image_path=test_image,
-                           ckpt_name='OSVOS_parent')
+                           ckpt_name='OSVOS_parent', batch_size=6)
 
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
