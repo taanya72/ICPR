@@ -21,7 +21,7 @@ import IPython
 slim = tf.contrib.slim
 from tensorflow.contrib.slim.nets import resnet_v2
 from tensorflow.contrib.slim.nets import resnet_utils
-
+import imageio
 
 def osvos_arg_scope(weight_decay=0.0002):
     """Defines the OSVOS arg scope.
@@ -82,7 +82,7 @@ def osvos(inputs, scope='osvos'):
             net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
             net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
             net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-            print(net_2, net_3, net_4, net_5)
+            # print(net_2, net_3, net_4, net_5)
 
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d],
@@ -102,7 +102,6 @@ def osvos(inputs, scope='osvos'):
                                     outputs_collections=end_points_collection, trainable=False):
                     # Side outputs
                     side_2_s = slim.convolution2d_transpose(side_2_s, 1, 4, 2, scope='score-dsn_2-up')
-                    print(side_2_s)
                     side_2_s = crop_features(side_2_s, im_size)
                     utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_2-cr', side_2_s)
                     side_3_s = slim.convolution2d_transpose(side_3_s, 1, 8, 4, scope='score-dsn_3-up')
@@ -765,7 +764,7 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_image_path=None, ckpt_name="osvos"):
+                   config=None, test_image_path=None, ckpt_name="osvos", backbone='vgg'):
     """Finetune OSVOS
     Args:
     See _train()
@@ -774,10 +773,10 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     finetune = 1
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
-           ckpt_name)
+           ckpt_name, backbone=backbone)
 
 
-def test(dataset, checkpoint_file, result_path, config=None):
+def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -799,7 +798,13 @@ def test(dataset, checkpoint_file, result_path, config=None):
 
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image)
+        if backbone == 'vgg':
+            net, end_points = osvos(input_image)
+        elif backbone == 'resnet':
+            net, end_points = osvos_resnet(input_image)
+        else:
+            raise ValueError('wrong input backbone.')
+
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -819,7 +824,7 @@ def test(dataset, checkpoint_file, result_path, config=None):
             image = preprocess_img(img[0])
             res = sess.run(probabilities, feed_dict={input_image: image})
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
-            scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
+            imageio.imwrite(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print('Saving ' + os.path.join(result_path, curr_frame))
 
 
