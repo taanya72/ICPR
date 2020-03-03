@@ -1,8 +1,0 @@
-*.DS_Store
-.idea/
-__pycache__/
-dataset/
-models/
-models/OSVOS_parent/
-*.index
-*.meta
