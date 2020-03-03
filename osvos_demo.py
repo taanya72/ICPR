@@ -10,6 +10,7 @@ Please consider citing the paper if you use this code.
 """
 import os
 import sys
+import glob
 from PIL import Image
 import numpy as np
 import tensorflow as tf
@@ -22,20 +23,49 @@ import osvos
 from dataset import Dataset
 os.chdir(root_folder)
 
+# DAVIS
+
+# # User defined parameters
+# seq_name = "car-shadow"
+# gpu_id = 0
+# train_model = True
+# result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name)
+#
+# # Train parameters
+# parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
+# logs_path = os.path.join('models', seq_name)
+# max_training_iters = 500
+#
+# # Define Dataset
+# test_frames = sorted(os.listdir(os.path.join('DAVIS', 'JPEGImages', '480p', seq_name)))
+# test_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, frame) for frame in test_frames]
+# if train_model:
+#     train_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, '00000.jpg')+' '+
+#                   os.path.join('DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
+#     dataset = Dataset(train_imgs, test_imgs, './', data_aug=True)
+# else:
+#     dataset = Dataset(None, test_imgs, './')
+
+# smoke dataset
+
 # User defined parameters
-seq_name = "car-shadow"
+seq_name = "Smoke3"
 gpu_id = 0
-train_model = True
-result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name)
+train_model = False
+result_path = os.path.join('dataset', 'smoke_dataset', seq_name)
 
 # Train parameters
-parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
+parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-15000')
 logs_path = os.path.join('models', seq_name)
+if not os.path.exists(logs_path):
+    os.mkdir(logs_path)
 max_training_iters = 500
 
 # Define Dataset
-test_frames = sorted(os.listdir(os.path.join('DAVIS', 'JPEGImages', '480p', seq_name)))
-test_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, frame) for frame in test_frames]
+# test_frames = sorted(os.listdir(os.path.join('dataset', 'smoke_dataset', seq_name)))
+test_imgs = glob.glob(os.path.join('dataset', 'smoke_dataset', seq_name, '*.jpeg'))
+# print(test_frames)
+# test_imgs = [os.path.join('dataset', 'smoke_dataset', seq_name, frame) for frame in test_frames]
 if train_model:
     train_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, '00000.jpg')+' '+
                   os.path.join('DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
@@ -54,21 +84,22 @@ if train_model:
         with tf.device('/gpu:' + str(gpu_id)):
             global_step = tf.Variable(0, name='global_step', trainable=False)
             osvos.train_finetune(dataset, parent_path, side_supervision, learning_rate, logs_path, max_training_iters,
-                                 save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
+                                 save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name, backbone='resnet')
 
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
-        checkpoint_path = os.path.join('models', seq_name, seq_name+'.ckpt-'+str(max_training_iters))
-        osvos.test(dataset, checkpoint_path, result_path)
+        # checkpoint_path = os.path.join('models', seq_name, seq_name+'.ckpt-'+str(max_training_iters))
+        checkpoint_path = parent_path
+        osvos.test(dataset, checkpoint_path, result_path, backbone='resnet')
 
 # Show results
 overlay_color = [255, 0, 0]
 transparency = 0.6
 plt.ion()
-for img_p in test_frames:
-    frame_num = img_p.split('.')[0]
-    img = np.array(Image.open(os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, img_p)))
+for img_p in test_imgs:
+    frame_num = os.path.basename(img_p).split('.')[0]
+    img = np.array(Image.open(img_p))
     mask = np.array(Image.open(os.path.join(result_path, frame_num+'.png')))
     mask = mask//np.max(mask)
     im_over = np.ndarray(img.shape)
