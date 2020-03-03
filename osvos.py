@@ -19,7 +19,9 @@ from PIL import Image
 import six
 import IPython
 slim = tf.contrib.slim
-
+from tensorflow.contrib.slim.nets import resnet_v2
+from tensorflow.contrib.slim.nets import resnet_utils
+import imageio
 
 def osvos_arg_scope(weight_decay=0.0002):
     """Defines the OSVOS arg scope.
@@ -80,6 +82,7 @@ def osvos(inputs, scope='osvos'):
             net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
             net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
             net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+            # print(net_2, net_3, net_4, net_5)
 
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d],
@@ -131,6 +134,120 @@ def osvos(inputs, scope='osvos'):
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
 
+
+
+
+def osvos_resnet(inputs, scope='osvos_resnet'):
+    """Defines the OSVOS network with resnet backbone
+    Args:
+    inputs: Tensorflow placeholder that contains the input image
+    scope: Scope name for the network
+    Returns:
+    net: Output Tensor of the network
+    end_points: Dictionary with all Tensors of the network
+    """
+
+    im_size = tf.shape(inputs)
+
+    with tf.variable_scope(scope, 'osvos_resnet', [inputs]) as sc:
+        # depth_multiplier = 1
+        # min_base_depth = 8
+        # depth_func = lambda d: max(int(d * depth_multiplier), min_base_depth)
+        # blocks = [
+        #     resnet_v1.resnet_v1_block('block1', base_depth=64, num_units=3, stride=2),
+        #     resnet_v1.resnet_v1_block('block2', base_depth=128, num_units=4, stride=2),
+        #     resnet_v1.resnet_v1_block('block3', base_depth=256, num_units=23, stride=2),
+        #     resnet_v1.resnet_v1_block('block4', base_depth=512, num_units=3, stride=1),
+        # ]
+        # block1, block2, block3, block4 = blocks
+        end_points_collection = sc.name + '_end_points'
+        # # Collect outputs of all intermediate layers.
+        # with slim.arg_scope([slim.conv2d, resnet_v1.bottleneck],
+        #                     outputs_collections=end_points_collection):
+        #     with slim.arg_scope([slim.batch_norm], is_training=False):
+        #     # with slim.arg_scope([slim.conv2d, slim.max_pool2d],
+        #     #                     padding='SAME',
+        #     #                     outputs_collections=end_points_collection):
+        #         # net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
+        #         net = resnet_utils.conv2d_same(inputs, 64, 7, stride=2, scope='conv1')
+        #         # net = slim.max_pool2d(net, [2, 2], scope='pool1')
+        #         net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
+        #         # net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
+        #         net_2 = resnet_utils.stack_blocks_dense(net, [block1], None, False)
+        #         # net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
+        #         # net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
+        #         # net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+        #         net_3 = resnet_utils.stack_blocks_dense(net_2, [block2], None, False)
+        #         # net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
+        #         # net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
+        #         net_4 = resnet_utils.stack_blocks_dense(net_3, [block3], None, False)
+        #         # net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+        #         net_5 = resnet_utils.stack_blocks_dense(net_4, [block4], None, False)
+        #         net_5 = slim.batch_norm(net_5, activation_fn=tf.nn.relu, scope='postnorm')
+        with slim.arg_scope(resnet_v2.resnet_arg_scope()):
+            net, end_points = resnet_v2.resnet_v2_101(inputs, None, is_training=False)
+            net_2 =end_points['osvos_resnet/resnet_v2_101/block1']
+            net_3 = end_points['osvos_resnet/resnet_v2_101/block2']
+            net_4 = end_points['osvos_resnet/resnet_v2_101/block3']
+            net_5 = end_points['osvos_resnet/resnet_v2_101/block4']
+            # print(net_2, net_3, net_4, net_5, net)
+            # Get side outputs of the network
+            with slim.arg_scope([slim.conv2d], activation_fn=None):
+                side_2 = slim.conv2d(net_2, 16, [3, 3], scope='conv2_2_16')
+                side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
+                side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')
+                side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv5_3_16')
+
+                # Supervise side outputs
+                side_2_s = slim.conv2d(side_2, 1, [1, 1], scope='score-dsn_2')
+                side_3_s = slim.conv2d(side_3, 1, [1, 1], scope='score-dsn_3')
+                side_4_s = slim.conv2d(side_4, 1, [1, 1], scope='score-dsn_4')
+                side_5_s = slim.conv2d(side_5, 1, [1, 1], scope='score-dsn_5')
+                with slim.arg_scope([slim.convolution2d_transpose],
+                                    activation_fn=None, biases_initializer=None, padding='VALID',
+                                    outputs_collections=end_points_collection, trainable=False):
+                    # Side outputs
+                    # shape (1, 146, 182, 1)
+                    side_2_s = slim.convolution2d_transpose(side_2_s, 1, 4, 2, scope='score-dsn_2-up')
+                    side_2_s = tf.image.resize_images(side_2_s, [im_size[1], im_size[2]])
+                    # side_2_s = crop_features(side_2_s, im_size)
+                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_2-cr', side_2_s)
+                    side_3_s = slim.convolution2d_transpose(side_3_s, 1, 8, 4, scope='score-dsn_3-up')
+                    side_3_s = tf.image.resize_images(side_3_s, [im_size[1], im_size[2]])
+                    # side_3_s = crop_features(side_3_s, im_size)
+                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_3-cr', side_3_s)
+                    # side_4_s = slim.convolution2d_transpose(side_4_s, 1, 16, 8, scope='score-dsn_4-up')
+                    side_4_s = tf.image.resize_images(side_4_s, [im_size[1], im_size[2]])
+                    # side_4_s = crop_features(side_4_s, im_size)
+                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_4-cr', side_4_s)
+                    side_5_s = slim.convolution2d_transpose(side_5_s, 1, 32, 16, scope='score-dsn_5-up')
+                    side_5_s = tf.image.resize_images(side_5_s, [im_size[1], im_size[2]])
+                    # side_5_s = crop_features(side_5_s, im_size)
+                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_5-cr', side_5_s)
+
+                    # Main output
+                    side_2_f = slim.convolution2d_transpose(side_2, 16, 4, 2, scope='score-multi2-up')
+                    # side_2_f = crop_features(side_2_f, im_size)
+                    side_2_f = tf.image.resize_images(side_2_f, [im_size[1], im_size[2]])
+                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi2-cr', side_2_f)
+                    side_3_f = slim.convolution2d_transpose(side_3, 16, 8, 4, scope='score-multi3-up')
+                    # side_3_f = crop_features(side_3_f, im_size)
+                    side_3_f = tf.image.resize_images(side_3_f, [im_size[1], im_size[2]])
+                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi3-cr', side_3_f)
+                    side_4_f = slim.convolution2d_transpose(side_4, 16, 16, 8, scope='score-multi4-up')
+                    # side_4_f = crop_features(side_4_f, im_size)
+                    side_4_f = tf.image.resize_images(side_4_f, [im_size[1], im_size[2]])
+                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi4-cr', side_4_f)
+                    side_5_f = slim.convolution2d_transpose(side_5, 16, 32, 16, scope='score-multi5-up')
+                    # side_5_f = crop_features(side_5_f, im_size)
+                    side_5_f = tf.image.resize_images(side_5_f, [im_size[1], im_size[2]])
+                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi5-cr', side_5_f)
+                concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
+
+                net = slim.conv2d(concat_side, 1, [1, 1], scope='upscore-fuse')
+
+        end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+        return net, end_points
 
 def upsample_filt(size):
     factor = (size + 1) // 2
@@ -237,8 +354,8 @@ def class_balanced_cross_entropy_loss(output, label):
     loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
         1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
 
-    loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
-    loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
+    loss_pos = tf.reduce_mean(-tf.multiply(labels, loss_val))
+    loss_neg = tf.reduce_mean(-tf.multiply(1.0 - labels, loss_val))
 
     final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
 
@@ -332,6 +449,25 @@ def load_caffe_weights(weights_path):
     vars_corresp['osvos/upscore-fuse/biases'] = osvos_weights['new-score-weighting_b']
     return slim.assign_from_values_fn(vars_corresp)
 
+def load_resnet_coco(ckpt_path):
+    reader = tf.train.NewCheckpointReader(ckpt_path)
+    var_to_shape_map = reader.get_variable_to_shape_map()
+    vars_corresp = dict()
+    # IPython.embed()
+    # print out the variables in the model
+    # for l in slim.get_model_variables():
+    #     print(l)
+    for v in var_to_shape_map:
+        if "conv" in v:
+            var = slim.get_model_variables(v.replace("resnet_v2_101", "osvos_resnet/resnet_v2_101"))
+            if len(var) == 0:
+                continue
+            vars_corresp[v] = var[0]
+    init_fn = slim.assign_from_checkpoint_fn(
+        ckpt_path,
+        vars_corresp)
+    return init_fn
+
 
 def parameter_lr():
     """Specify the relative learning rate for every parameter. The final learning rate
@@ -398,7 +534,7 @@ def parameter_lr():
 
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
-           test_image_path=None, ckpt_name="osvos"):
+           test_image_path=None, ckpt_name="osvos", backbone='resnet'):
     """Train OSVOS
     Args:
     dataset: Reference to a Dataset object instance
@@ -429,16 +565,40 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Prepare the input data
-    input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
-    input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
+    # set a shape for debugging the feature shapes
+    # img_height, img_width = 576, 720
+    # img_height, img_width = 480, 854
+    img_height, img_width = None, None
+    input_image = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
+    input_label = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
 
     # Create the network
-    with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image)
+    if backbone == 'vgg':
+        with slim.arg_scope(osvos_arg_scope()):
+            net, end_points = osvos(input_image)
+    elif backbone == 'resnet':
+        with slim.arg_scope(osvos_arg_scope()):
+            net, end_points = osvos_resnet(input_image)
+            # debug the resenet here
+            # with slim.arg_scope(resnet_v1.resnet_arg_scope()):
+            #     net, end_points = resnet_v1.resnet_v1_101(input_image, None, is_training=False)
+            #     print(end_points)
+    else:
+        raise ValueError('wrong input backbone.')
 
     # Initialize weights from pre-trained model
     if finetune == 0:
-        init_weights = load_vgg_imagenet(initial_ckpt)
+        # load the resnet101
+        # from tensorflow.contrib.slim.nets import resnet_v1
+        # with slim.arg_scope(resnet_v1.resnet_arg_scope()):
+        #     net, end_points = resnet_v1.resnet_v1_101(input_image, None, is_training=False)
+        if backbone == 'vgg':
+            init_weights = load_vgg_imagenet(initial_ckpt)
+        elif backbone == 'resnet':
+            init_weights = load_resnet_coco(initial_ckpt)
+        else:
+            raise ValueError('wrong backbone input.')
+        # init_weights = load_resnet_coco(initial_ckpt)
 
     # Define loss
     with tf.name_scope('losses'):
@@ -483,8 +643,12 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             for var_ind, grad_acc in six.iteritems(grad_accumulator):
                 var_name = str(grads_and_vars[var_ind][1].name).split(':')[0]
                 var_grad = grads_and_vars[var_ind][0]
-                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr[var_name],
+                if var_name in layer_lr:
+                    grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr[var_name],
                                                                 local_step=global_step))
+                else:
+                    grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * 1,
+                                                                   local_step=global_step))
         with tf.name_scope('take_gradients'):
             mean_grads_and_vars = []
             for var_ind, grad_acc in six.iteritems(grad_accumulator):
@@ -545,8 +709,13 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             # Average the gradient
             for _ in range(0, iter_mean_grad):
                 batch_image, batch_label = dataset.next_batch(batch_size, 'train')
-                image = preprocess_img(batch_image[0])
-                label = preprocess_labels(batch_label[0])
+                # image shape (1, 576, 720, 3)
+                image = np.stack(batch_image, axis=0)
+                label = np.stack(batch_label, axis=0)
+                label = np.expand_dims(label, axis=-1)
+                #label = 1 - label
+                # image = preprocess_img(batch_image[0])
+                # label = preprocess_labels(batch_label[0])
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
                                    feed_dict={input_image: image, input_label: label})
                 batch_loss = run_res[0]
@@ -581,7 +750,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
 def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                  display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                 config=None, test_image_path=None, ckpt_name="osvos"):
+                 config=None, test_image_path=None, ckpt_name="osvos", backbone='vgg'):
     """Train OSVOS parent network
     Args:
     See _train()
@@ -590,12 +759,12 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
     finetune = 0
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
-           ckpt_name)
+           ckpt_name, backbone=backbone)
 
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_image_path=None, ckpt_name="osvos"):
+                   config=None, test_image_path=None, ckpt_name="osvos", backbone='vgg'):
     """Finetune OSVOS
     Args:
     See _train()
@@ -604,10 +773,10 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     finetune = 1
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
-           ckpt_name)
+           ckpt_name, backbone=backbone)
 
 
-def test(dataset, checkpoint_file, result_path, config=None):
+def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -629,7 +798,13 @@ def test(dataset, checkpoint_file, result_path, config=None):
 
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image)
+        if backbone == 'vgg':
+            net, end_points = osvos(input_image)
+        elif backbone == 'resnet':
+            net, end_points = osvos_resnet(input_image)
+        else:
+            raise ValueError('wrong input backbone.')
+
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -649,7 +824,7 @@ def test(dataset, checkpoint_file, result_path, config=None):
             image = preprocess_img(img[0])
             res = sess.run(probabilities, feed_dict={input_image: image})
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
-            scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
+            imageio.imwrite(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print('Saving ' + os.path.join(result_path, curr_frame))
 
 
