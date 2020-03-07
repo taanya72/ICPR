@@ -11,10 +11,10 @@ from PIL import Image
 import os
 import numpy as np
 import sys
-
-
+import glob
+from flow_utils import run_flow
 class Dataset:
-    def __init__(self, train_list, test_list, database_root, store_memory=True, data_aug=False):
+    def __init__(self, train_list, test_list, database_root, store_memory=True, data_aug=False, flow_given=None):
         """Initialize the Dataset object
         Args:
         train_list: TXT file or list with the paths of the images to use for training (Images must be between 0 and 255)
@@ -23,6 +23,8 @@ class Dataset:
         store_memory: True stores all the training images, False loads at runtime the images
         Returns:
         """
+        # generate the file list first
+        generate_data_list(database_root)
         if not store_memory and data_aug:
             sys.stderr.write('Online data augmentation not supported when the data is not stored in memory!')
             sys.exit()
@@ -50,13 +52,17 @@ class Dataset:
         self.images_train_path = []
         self.labels_train = []
         self.labels_train_path = []
+        self.flow_train = []
+        self.flow_train_path = []
         for idx, line in enumerate(train_paths):
             if store_memory:
-                img = Image.open(os.path.join(database_root, str(line.split()[0])))
+                img = Image.open(str(line.split()[0]))
                 img.load()
-                label = Image.open(os.path.join(database_root, str(line.split()[1])))
+                label = Image.open(str(line.split()[1]))
                 label.load()
                 label = label.split()[0]
+                if flow_given:
+                    flow = np.load(str(line.split()[2]))
                 if data_aug:
                     if idx == 0: sys.stdout.write('Performing the data augmentation')
                     for scale in data_aug_scales:
@@ -74,13 +80,17 @@ class Dataset:
                     if idx == 0: sys.stdout.write('Loading the data')
                     self.images_train.append(np.array(img, dtype=np.uint8))
                     self.labels_train.append(np.array(label, dtype=np.uint8))
+                    if flow_given:
+                        self.flow_train.append(flow)
                 if (idx + 1) % 50 == 0:
                     sys.stdout.write('.')
-            self.images_train_path.append(os.path.join(database_root, str(line.split()[0])))
-            self.labels_train_path.append(os.path.join(database_root, str(line.split()[1])))
+            self.images_train_path.append(str(line.split()[0]))
+            self.labels_train_path.append(str(line.split()[1]))
+            self.flow_train_path.append(str(line.split()[2]))
         sys.stdout.write('\n')
         self.images_train_path = np.array(self.images_train_path)
         self.labels_train_path = np.array(self.labels_train_path)
+        self.flow_train_path = np.array(self.labels_train_path)
 
         # Load testing images (path) and labels
         self.images_test = []
@@ -121,9 +131,11 @@ class Dataset:
                 if self.store_memory:
                     images = [self.images_train[l] for l in idx]
                     labels = [self.labels_train[l] for l in idx]
+                    flows = [self.flow_train[l] for l in idx]
                 else:
                     images = [self.images_train_path[l] for l in idx]
                     labels = [self.labels_train_path[l] for l in idx]
+                    flows = [self.flow_train_path[l] for l in idx]
                 self.train_ptr += batch_size
             else:
                 old_idx = np.array(self.train_idx[self.train_ptr:])
@@ -133,17 +145,22 @@ class Dataset:
                 if self.store_memory:
                     images_1 = [self.images_train[l] for l in old_idx]
                     labels_1 = [self.labels_train[l] for l in old_idx]
+                    flows_1 = [self.flow_train[l] for l in old_idx]
                     images_2 = [self.images_train[l] for l in idx]
                     labels_2 = [self.labels_train[l] for l in idx]
+                    flows_2 = [self.flow_train[l] for l in idx]
                 else:
                     images_1 = [self.images_train_path[l] for l in old_idx]
                     labels_1 = [self.labels_train_path[l] for l in old_idx]
                     images_2 = [self.images_train_path[l] for l in idx]
                     labels_2 = [self.labels_train_path[l] for l in idx]
+                    flows_1 = [self.flow_train_path[l] for l in idx]
+                    flows_2 = [self.flow_train_path[l] for l in idx]
                 images = images_1 + images_2
                 labels = labels_1 + labels_2
+                flows = flows_1 + flows_2
                 self.train_ptr = new_ptr
-            return images, labels
+            return images, labels, flows
         elif phase == 'test':
             images = None
             if self.test_ptr + batch_size < self.test_size:
@@ -170,3 +187,45 @@ class Dataset:
     def train_img_size(self):
         width, height = Image.open(self.images_train[self.train_ptr]).size
         return height, width
+
+
+def generate_data_list(base_dir):
+    '''
+
+    Args:
+        base_dir: given the dataset directory, ex. Smoke3
+        - Smoke3/
+            - Image/
+            - Segmentation/
+            - FLow/
+
+    Returns:
+        generate the list which is needed for the Dataset class
+    '''
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError
+    print(base_dir)
+    image_dir = os.path.join(base_dir, 'Image')
+    seg_dir = os.path.join(base_dir, 'Segmentation')
+    flow_dir = os.path.join(base_dir, 'Flow')
+    if not os.path.exists(flow_dir):
+        os.mkdir(flow_dir)
+        # run dense flow (feed in base dir)
+        run_flow(base_dir)
+    elif len(os.listdir(flow_dir)) == 0:
+        run_flow(base_dir)
+    # glob different filetypes
+    def glob_files(path):
+        files = []
+        for ext in ('*.jpeg', '*.png', '*.jpg', '*.bmp', '*.npy'):
+            files.extend(glob.glob(os.path.join(path, ext)))
+        return files
+    image_abs_paths = glob_files(image_dir)
+    seg_abs_paths = glob_files(seg_dir)
+    flow_abs_paths = glob_files(flow_dir)
+    assert len(image_abs_paths) == len(seg_abs_paths) == len(flow_abs_paths), "number of files does not match"
+    # generate the txt file
+    file_list = open("smoke_train_list.txt", "w")
+    lines = [' '.join(x) + '\n' for x in zip(image_abs_paths, seg_abs_paths, flow_abs_paths)]
+    file_list.writelines(lines)
+    file_list.close()
