@@ -43,7 +43,7 @@ values = [ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate, ini_lea
 # Define Dataset
 # smoke dataset
 train_file = 'smoke_train_list.txt'
-dataset = Dataset(train_file, None, './dataset/smoke_dataset/*',
+dataset = Dataset(train_file, None, './dataset/smoke_dataset/',
                   store_memory=store_memory, data_aug=data_aug, flow_given=True)
 # davis 2016 dataset
 # train_file = 'train_parent_davis.txt'

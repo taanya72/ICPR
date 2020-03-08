@@ -40,10 +40,10 @@ class Dataset:
         # generate the file list first
         #generate_all_folders
         if train_list:
-            all_folders = glob.glob(database_root)
+            all_folders = [ name for name in os.listdir(database_root) if os.path.isdir(os.path.join(database_root, name)) ]
             for folder in all_folders:
-                print("Here --------- " + str(folder))
-                generate_data_list(folder)
+                print("Folder --------- " + str(folder))
+                generate_data_list(os.path.join(database_root, folder))
         if not store_memory and data_aug:
             sys.stderr.write('Online data augmentation not supported when the data is not stored in memory!')
             sys.exit()

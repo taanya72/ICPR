@@ -53,9 +53,11 @@ seq_name = "wildfire_smoke_1"
 gpu_id = 0
 train_model = False
 result_path = os.path.join('dataset', 'test_dataset', seq_name, 'Results')
-
+result_vis_path = os.path.join('dataset', 'test_dataset', seq_name, 'Visualization')
+if not os.path.exists(result_vis_path):
+    os.mkdir(result_vis_path)
 # Train parameters
-parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-200')
+parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-5000')
 logs_path = os.path.join('models', seq_name)
 if not os.path.exists(logs_path):
     os.mkdir(logs_path)
@@ -88,7 +90,7 @@ if train_model:
                   os.path.join('DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
     dataset = Dataset(train_imgs, final_test_list, './', data_aug=True)
 else:
-    dataset = Dataset(None, final_test_list, './dataset/test_dataset/*/', flow_given=True)
+    dataset = Dataset(None, final_test_list, './dataset/test_dataset/', flow_given=True)
 
 # Train the network
 if train_model:
@@ -123,8 +125,11 @@ for img_p in test_imgs:
     im_over[:, :, 0] = (1 - mask) * img[:, :, 0] + mask * (overlay_color[0]*transparency + (1-transparency)*img[:, :, 0])
     im_over[:, :, 1] = (1 - mask) * img[:, :, 1] + mask * (overlay_color[1]*transparency + (1-transparency)*img[:, :, 1])
     im_over[:, :, 2] = (1 - mask) * img[:, :, 2] + mask * (overlay_color[2]*transparency + (1-transparency)*img[:, :, 2])
+
     plt.imshow(im_over.astype(np.uint8))
     plt.axis('off')
+    plt.savefig(os.path.join(result_vis_path, frame_num + '.png'))
     plt.show()
+    # save the plot
     plt.pause(0.01)
     plt.clf()

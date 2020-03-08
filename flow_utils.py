@@ -44,7 +44,7 @@ def run_flow(dir_path):
     print("run dense flow for images in {}".format(dir_path))
     # get the images
     images_dir = os.path.join(dir_path, 'Image')
-    assert os.path.exists(images_dir), "the image foler {} does not exist.".format(images_dir)
+    assert os.path.exists(images_dir), "the image folder {} does not exist.".format(images_dir)
     output_dir = os.path.join(dir_path, 'Flow')
     image_paths = glob_files(images_dir)
     image_paths.sort(key=natural_keys)
