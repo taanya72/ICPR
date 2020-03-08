@@ -13,6 +13,20 @@ import numpy as np
 import sys
 import glob
 from flow_utils import run_flow
+import re
+
+
+
+def atof(text):
+    try:
+        retval = float(text)
+    except ValueError:
+        retval = text
+    return retval
+
+def natural_keys(text):
+    return [ atof(c) for c in re.split(r'[+-]?([0-9]+(?:[.][0-9]*)?|[.][0-9]+)', text) ]
+
 class Dataset:
     def __init__(self, train_list, test_list, database_root, store_memory=True, data_aug=False, flow_given=None):
         """Initialize the Dataset object
@@ -24,7 +38,12 @@ class Dataset:
         Returns:
         """
         # generate the file list first
-        generate_data_list(database_root)
+        #generate_all_folders
+        if train_list:
+            all_folders = glob.glob(database_root)
+            for folder in all_folders:
+                print("Here --------- " + str(folder))
+                generate_data_list(folder)
         if not store_memory and data_aug:
             sys.stderr.write('Online data augmentation not supported when the data is not stored in memory!')
             sys.exit()
@@ -95,13 +114,19 @@ class Dataset:
         # Load testing images (path) and labels
         self.images_test = []
         self.images_test_path = []
+        self.flow_test = []
+        self.flow_test_path = []
         for idx, line in enumerate(test_paths):
             if store_memory:
-                self.images_test.append(np.array(Image.open(os.path.join(database_root, str(line.split()[0]))),
+                self.images_test.append(np.array(Image.open(os.path.join('.', str(line[0].split()[0]))),
                                                  dtype=np.uint8))
+                if flow_given:
+                    self.flow_test.append(np.load(os.path.join('.', str(line[1].split()[0]))))
                 if (idx + 1) % 1000 == 0:
                     print('Loaded ' + str(idx) + ' test images')
-            self.images_test_path.append(os.path.join(database_root, str(line.split()[0])))
+            self.images_test_path.append(os.path.join('.', str(line[0].split()[0])))
+            if flow_given:
+                self.flow_test_path.append(os.path.join('.', str(line[1].split()[0])))
         print('Done initializing Dataset')
 
         # Init parameters
@@ -163,20 +188,25 @@ class Dataset:
             return images, labels, flows
         elif phase == 'test':
             images = None
+            flows = None
             if self.test_ptr + batch_size < self.test_size:
                 if self.store_memory:
                     images = self.images_test[self.test_ptr:self.test_ptr + batch_size]
+                    flows = self.flow_test[self.test_ptr:self.test_ptr + batch_size]
                 paths = self.images_test_path[self.test_ptr:self.test_ptr + batch_size]
+                flow_paths = self.flow_test_path[self.test_ptr:self.test_ptr + batch_size]
                 self.test_ptr += batch_size
             else:
                 new_ptr = (self.test_ptr + batch_size) % self.test_size
                 if self.store_memory:
                     images = self.images_test[self.test_ptr:] + self.images_test[:new_ptr]
+                    flows = self.flow_test[self.test_ptr:] + self.flow_test[:new_ptr]
                 paths = self.images_test_path[self.test_ptr:] + self.images_test_path[:new_ptr]
+                flow_paths = self.flow_test_path[self.test_ptr:] + self.flow_test_path[:new_ptr]
                 self.test_ptr = new_ptr
-            return images, paths
+            return images, paths, flows, flow_paths
         else:
-            return None, None
+            return None, None, None, None
 
     def get_train_size(self):
         return self.train_size
@@ -223,9 +253,12 @@ def generate_data_list(base_dir):
     image_abs_paths = glob_files(image_dir)
     seg_abs_paths = glob_files(seg_dir)
     flow_abs_paths = glob_files(flow_dir)
+    image_abs_paths.sort(key=natural_keys)
+    seg_abs_paths.sort(key=natural_keys)
+    flow_abs_paths.sort(key=natural_keys)
     assert len(image_abs_paths) == len(seg_abs_paths) == len(flow_abs_paths), "number of files does not match"
     # generate the txt file
-    file_list = open("smoke_train_list.txt", "w")
+    file_list = open("smoke_train_list.txt", "a")
     lines = [' '.join(x) + '\n' for x in zip(image_abs_paths, seg_abs_paths, flow_abs_paths)]
     file_list.writelines(lines)
     file_list.close()

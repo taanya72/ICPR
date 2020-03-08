@@ -49,29 +49,46 @@ os.chdir(root_folder)
 # smoke dataset
 
 # User defined parameters
-seq_name = "Smoke3"
+seq_name = "wildfire_smoke_1"
 gpu_id = 0
 train_model = False
-result_path = os.path.join('dataset', 'smoke_dataset', seq_name)
+result_path = os.path.join('dataset', 'test_dataset', seq_name, 'Results')
 
 # Train parameters
-parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-15000')
+parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-200')
 logs_path = os.path.join('models', seq_name)
 if not os.path.exists(logs_path):
     os.mkdir(logs_path)
 max_training_iters = 500
 
+
+
+
+
 # Define Dataset
+import re
+def atof(text):
+    try:
+        retval = float(text)
+    except ValueError:
+        retval = text
+    return retval
+def natural_keys(text):
+    return [ atof(c) for c in re.split(r'[+-]?([0-9]+(?:[.][0-9]*)?|[.][0-9]+)', text) ]
 # test_frames = sorted(os.listdir(os.path.join('dataset', 'smoke_dataset', seq_name)))
-test_imgs = glob.glob(os.path.join('dataset', 'smoke_dataset', seq_name, '*.jpeg'))
-# print(test_frames)
+test_imgs = glob.glob(os.path.join('dataset','test_dataset',seq_name,'Image', '*.jpg'))
+test_flows = glob.glob(os.path.join('dataset','test_dataset',seq_name,'Flow', '*.npy'))
+test_imgs.sort(key=natural_keys)
+test_flows.sort(key=natural_keys)
+final_test_list = [(x,y) for x,y in zip(test_imgs, test_flows)]
+print(final_test_list)
 # test_imgs = [os.path.join('dataset', 'smoke_dataset', seq_name, frame) for frame in test_frames]
 if train_model:
     train_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, '00000.jpg')+' '+
                   os.path.join('DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
-    dataset = Dataset(train_imgs, test_imgs, './', data_aug=True)
+    dataset = Dataset(train_imgs, final_test_list, './', data_aug=True)
 else:
-    dataset = Dataset(None, test_imgs, './')
+    dataset = Dataset(None, final_test_list, './dataset/test_dataset/*/', flow_given=True)
 
 # Train the network
 if train_model:
@@ -91,7 +108,7 @@ with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         # checkpoint_path = os.path.join('models', seq_name, seq_name+'.ckpt-'+str(max_training_iters))
         checkpoint_path = parent_path
-        osvos.test(dataset, checkpoint_path, result_path, backbone='resnet')
+        osvos.test(dataset, checkpoint_path, result_path, backbone='vgg')
 
 # Show results
 overlay_color = [255, 0, 0]

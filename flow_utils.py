@@ -60,7 +60,7 @@ def run_flow(dir_path):
             pre_image, next_image, alpha, ratio, minWidth, nOuterFPIterations, nInnerFPIterations,
             nSORIterations, colType)
         flow = np.concatenate((u[..., None], v[..., None]), axis=2)
-        np.save(os.path.join(output_dir, 'outFlow' + str(i) + '.npy'), flow)
+        np.save(os.path.join(output_dir, next_image_path.split('/')[-1].split('.')[0] + '.npy'), flow)
         # im1 = np.array(Image.open(im1_path))
         # im2 = np.array(Image.open(im2_path))
         # im1 = im1.astype(float) / 255.

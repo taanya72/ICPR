@@ -829,11 +829,12 @@ def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
     # Input data
     batch_size = 1
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
-
+    input_flow = tf.placeholder(tf.float32, [batch_size, None, None, 2])
+    rgb_flow_input = tf.concat([input_image, input_flow], 3, name='rgb_flow_input')
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
         if backbone == 'vgg':
-            net, end_points = osvos(input_image)
+            net, end_points = osvos(rgb_flow_input)
         elif backbone == 'resnet':
             net, end_points = osvos_resnet(input_image)
         else:
@@ -852,12 +853,19 @@ def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         for frame in range(0, dataset.get_test_size()):
-            img, curr_img = dataset.next_batch(batch_size, 'test')
+            img, curr_img, flow, curr_flow = dataset.next_batch(batch_size, 'test')
+            print(img)
+            print(curr_img)
+            print(flow)
+            print(curr_flow)
             curr_frame_orig_name = os.path.split(curr_img[0])[1]
             curr_frame = os.path.splitext(curr_frame_orig_name)[0] + '.png'
-            image = preprocess_img(img[0])
-            res = sess.run(probabilities, feed_dict={input_image: image})
+            image = _preprocess_img(img[0])
+            flow = _preprocess_flow(flow[0])
+            res = sess.run(probabilities, feed_dict={input_image: image, input_flow: flow})
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
+            print(res_np)
+            np.savetxt("sample_output.txt", res_np, newline=" ")
             imageio.imwrite(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print('Saving ' + os.path.join(result_path, curr_frame))
 

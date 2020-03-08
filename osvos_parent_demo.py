@@ -28,7 +28,7 @@ iter_mean_grad = 10
 max_training_iters_1 = 15000
 max_training_iters_2 = 30000
 max_training_iters_3 = 50000
-save_step = 5000
+save_step = 100
 test_image = None
 display_step = 1
 backbone_arch = 'vgg'
@@ -43,7 +43,7 @@ values = [ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate, ini_lea
 # Define Dataset
 # smoke dataset
 train_file = 'smoke_train_list.txt'
-dataset = Dataset(train_file, None, './dataset/smoke_dataset/wildfire_smoke_1',
+dataset = Dataset(train_file, None, './dataset/smoke_dataset/*',
                   store_memory=store_memory, data_aug=data_aug, flow_given=True)
 # davis 2016 dataset
 # train_file = 'train_parent_davis.txt'
