@@ -278,7 +278,12 @@ def interp_surgery(variables):
 
 
 # TO DO: Move preprocessing into Tensorflow
-def preprocess_img(image):
+def preprocess_img(images):
+    np_images = []
+    for image in images:
+        np_images.append(_preprocess_img(image))
+    return np.concatenate(np_images, axis=0)
+def _preprocess_img(image):
     """Preprocess the image to adapt it to network requirements
     Args:
     Image we want to input the network (W,H,3) numpy array
@@ -296,7 +301,12 @@ def preprocess_img(image):
 
 
 # TO DO: Move preprocessing into Tensorflow
-def preprocess_labels(label):
+def preprocess_labels(labels):
+    np_labels = []
+    for label in labels:
+       np_labels.append(_preprocess_labels(label))
+    return np.concatenate(np_labels, axis=0)
+def _preprocess_labels(label):
     """Preprocess the labels to adapt them to the loss computation requirements
     Args:
     Label corresponding to the input image (W,H) numpy array
@@ -314,6 +324,24 @@ def preprocess_labels(label):
     # label = tf.expand_dims(tf.expand_dims(label, 0), 3)
     return label
 
+def preprocess_flow(flows):
+    np_flows = []
+    for flow in flows:
+        np_flows.append(_preprocess_flow(flow))
+    return np.concatenate(np_flows, axis=0)
+
+def _preprocess_flow(flow):
+    """Preprocess the flow image to adapt it to network requirements
+    Args:
+    Flow image we want to input the network (W,H,2) numpy array
+    Returns:
+    Flow image ready to input the network (1,W,H,2)
+    """
+    if type(flow) is not np.ndarray:
+        flow = np.load(flow)
+    flow_ = np.expand_dims(flow, axis=0)
+    return flow_
+
 
 def load_vgg_imagenet(ckpt_path):
     """Initialize the network parameters from the VGG-16 pre-trained model provided by TF-SLIM
@@ -328,7 +356,13 @@ def load_vgg_imagenet(ckpt_path):
     #IPython.embed()
     for v in var_to_shape_map:
         if "conv" in v:
+            # print(v)
+            # skip the first layer when loading since we use 5 channels
+            if "conv1_1" in v:
+                continue
             vars_corresp[v] = slim.get_model_variables(v.replace("vgg_16", "osvos"))[0]
+    # print(vars_corresp)
+    # exit()
     init_fn = slim.assign_from_checkpoint_fn(
         ckpt_path,
         vars_corresp)
@@ -449,7 +483,7 @@ def load_caffe_weights(weights_path):
     vars_corresp['osvos/upscore-fuse/biases'] = osvos_weights['new-score-weighting_b']
     return slim.assign_from_values_fn(vars_corresp)
 
-def load_resnet_coco(ckpt_path):
+def load_resnet_imagenet(ckpt_path):
     reader = tf.train.NewCheckpointReader(ckpt_path)
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
@@ -571,11 +605,14 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     img_height, img_width = None, None
     input_image = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
     input_label = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
+    input_flow = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 2])
+    # concat rgb and flow
+    rgb_flow_input = tf.concat([input_image, input_flow], 3, name='rgb_flow_input')
 
     # Create the network
     if backbone == 'vgg':
         with slim.arg_scope(osvos_arg_scope()):
-            net, end_points = osvos(input_image)
+            net, end_points = osvos(rgb_flow_input)
     elif backbone == 'resnet':
         with slim.arg_scope(osvos_arg_scope()):
             net, end_points = osvos_resnet(input_image)
@@ -588,17 +625,12 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
     # Initialize weights from pre-trained model
     if finetune == 0:
-        # load the resnet101
-        # from tensorflow.contrib.slim.nets import resnet_v1
-        # with slim.arg_scope(resnet_v1.resnet_arg_scope()):
-        #     net, end_points = resnet_v1.resnet_v1_101(input_image, None, is_training=False)
         if backbone == 'vgg':
             init_weights = load_vgg_imagenet(initial_ckpt)
         elif backbone == 'resnet':
-            init_weights = load_resnet_coco(initial_ckpt)
+            init_weights = load_resnet_imagenet(initial_ckpt)
         else:
             raise ValueError('wrong backbone input.')
-        # init_weights = load_resnet_coco(initial_ckpt)
 
     # Define loss
     with tf.name_scope('losses'):
@@ -708,16 +740,18 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         while step < max_training_iters + 1:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
-                batch_image, batch_label = dataset.next_batch(batch_size, 'train')
+                # list
+                batch_image, batch_label, batch_flow = dataset.next_batch(batch_size, 'train')
                 # image shape (1, 576, 720, 3)
-                image = np.stack(batch_image, axis=0)
-                label = np.stack(batch_label, axis=0)
-                label = np.expand_dims(label, axis=-1)
+                # image = np.stack(batch_image, axis=0)
+                # label = np.stack(batch_label, axis=0)
+                # label = np.expand_dims(label, axis=-1)
                 #label = 1 - label
-                # image = preprocess_img(batch_image[0])
-                # label = preprocess_labels(batch_label[0])
+                image = preprocess_img(batch_image)
+                label = preprocess_labels(batch_label)
+                flow = preprocess_flow(batch_flow)
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
-                                   feed_dict={input_image: image, input_label: label})
+                                   feed_dict={input_image: image, input_label: label, input_flow: flow})
                 batch_loss = run_res[0]
                 summary = run_res[1]
 
@@ -795,11 +829,12 @@ def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
     # Input data
     batch_size = 1
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
-
+    input_flow = tf.placeholder(tf.float32, [batch_size, None, None, 2])
+    rgb_flow_input = tf.concat([input_image, input_flow], 3, name='rgb_flow_input')
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
         if backbone == 'vgg':
-            net, end_points = osvos(input_image)
+            net, end_points = osvos(rgb_flow_input)
         elif backbone == 'resnet':
             net, end_points = osvos_resnet(input_image)
         else:
@@ -818,12 +853,19 @@ def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         for frame in range(0, dataset.get_test_size()):
-            img, curr_img = dataset.next_batch(batch_size, 'test')
+            img, curr_img, flow, curr_flow = dataset.next_batch(batch_size, 'test')
+            print(img)
+            print(curr_img)
+            print(flow)
+            print(curr_flow)
             curr_frame_orig_name = os.path.split(curr_img[0])[1]
             curr_frame = os.path.splitext(curr_frame_orig_name)[0] + '.png'
-            image = preprocess_img(img[0])
-            res = sess.run(probabilities, feed_dict={input_image: image})
+            image = _preprocess_img(img[0])
+            flow = _preprocess_flow(flow[0])
+            res = sess.run(probabilities, feed_dict={input_image: image, input_flow: flow})
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
+            print(res_np)
+            np.savetxt("sample_output.txt", res_np, newline=" ")
             imageio.imwrite(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print('Saving ' + os.path.join(result_path, curr_frame))
 
