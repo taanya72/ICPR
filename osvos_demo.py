@@ -22,7 +22,7 @@ sys.path.append(os.path.abspath(root_folder))
 import osvos
 from dataset import Dataset
 os.chdir(root_folder)
-
+import imageio
 # DAVIS
 
 # # User defined parameters
@@ -49,13 +49,13 @@ os.chdir(root_folder)
 # smoke dataset
 
 # User defined parameters
-seq_name = "wildfire_smoke_1"
+seq_name = "wildfire_smoke_3"
 gpu_id = 0
 train_model = False
 result_path = os.path.join('dataset', 'test_dataset', seq_name, 'Results')
 
 # Train parameters
-parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-200')
+parent_path = os.path.join('models', 'OSVOS_parent', 'OSVOS_parent.ckpt-9000')
 logs_path = os.path.join('models', seq_name)
 if not os.path.exists(logs_path):
     os.mkdir(logs_path)
@@ -119,10 +119,13 @@ for img_p in test_imgs:
     img = np.array(Image.open(img_p))
     mask = np.array(Image.open(os.path.join(result_path, frame_num+'.png')))
     mask = mask//np.max(mask)
+    mask = 1 - mask
     im_over = np.ndarray(img.shape)
     im_over[:, :, 0] = (1 - mask) * img[:, :, 0] + mask * (overlay_color[0]*transparency + (1-transparency)*img[:, :, 0])
     im_over[:, :, 1] = (1 - mask) * img[:, :, 1] + mask * (overlay_color[1]*transparency + (1-transparency)*img[:, :, 1])
     im_over[:, :, 2] = (1 - mask) * img[:, :, 2] + mask * (overlay_color[2]*transparency + (1-transparency)*img[:, :, 2])
+    new_result_path = "/data1/taanya1/new_ICPR/ICPR/dataset/test_dataset/wildfire_smoke_3/Flow_rgb/"
+    imageio.imwrite(os.path.join(new_result_path, frame_num+'.png'), im_over.astype(np.uint8))  
     plt.imshow(im_over.astype(np.uint8))
     plt.axis('off')
     plt.show()
