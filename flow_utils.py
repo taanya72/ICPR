@@ -67,4 +67,13 @@ def run_flow(dir_path):
         # im2 = im2.astype(float) / 255.
 
 
+def run_flow_2_imgs(img1, img2):
+    pre_image = np.array(Image.open(img1), dtype=np.double) / 255.
+    next_image = np.array(Image.open(img2), dtype=np.double) / 255.
+    # print(pre_image)
+    u, v, im2W = pyflow.coarse2fine_flow(
+        pre_image, next_image, alpha, ratio, minWidth, nOuterFPIterations, nInnerFPIterations,
+        nSORIterations, colType)
+    flow = np.concatenate((u[..., None], v[..., None]), axis=2)
+    return flow
 

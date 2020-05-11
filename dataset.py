@@ -13,6 +13,7 @@ import numpy as np
 import sys
 import glob
 from flow_utils import run_flow
+from flow_utils import run_flow_2_imgs
 import re
 
 
@@ -137,6 +138,7 @@ class Dataset:
         self.train_idx = np.arange(self.train_size)
         np.random.shuffle(self.train_idx)
         self.store_memory = store_memory
+        
 
     def next_batch(self, batch_size, phase):
         """Get next batch of image (path) and labels
@@ -152,21 +154,59 @@ class Dataset:
         """
         if phase == 'train':
             if self.train_ptr + batch_size < self.train_size:
-                idx = np.array(self.train_idx[self.train_ptr:self.train_ptr + batch_size])
+                idx_1 = np.array(self.train_idx[self.train_ptr:self.train_ptr + batch_size])
+                paths_1 = self.images_train_path[self.train_ptr:self.train_ptr + batch_size]
+                self.train_ptr = self.train_ptr + batch_size
+                idx_2 = np.array(self.train_idx[self.train_ptr:self.train_ptr + batch_size])
+                paths_2 = self.images_train_path[self.train_ptr:self.train_ptr + batch_size]
+                # old_idx = np.array(self.train_idx[self.train_ptr:])
+                # print("Old index is " + str(old_idx))
+                # # np.random.shuffle(self.train_idx)
+                # new_ptr = (self.train_ptr + batch_size) % self.train_size
+                # idx = np.array(self.train_idx[:new_ptr])
+                # print("New index is " + str(idx))
+                flows = []
                 if self.store_memory:
-                    images = [self.images_train[l] for l in idx]
-                    labels = [self.labels_train[l] for l in idx]
-                    flows = [self.flow_train[l] for l in idx]
+                    images_1 = [self.images_train[l] for l in idx_1]
+                    labels_1 = [self.labels_train[l] for l in idx_1]
+                    images_2 = [self.images_train[l] for l in idx_2]
+                    labels_2 = [self.labels_train[l] for l in idx_2]
+                    for i,j in zip(paths_1,paths_2):
+                        flows.append(run_flow_2_imgs(i,j))
                 else:
-                    images = [self.images_train_path[l] for l in idx]
-                    labels = [self.labels_train_path[l] for l in idx]
-                    flows = [self.flow_train_path[l] for l in idx]
-                self.train_ptr += batch_size
+                    images_1 = [self.images_train_path[l] for l in idx_1]
+                    labels_1 = [self.labels_train_path[l] for l in idx_1]
+                    images_2 = [self.images_train_path[l] for l in idx_2]
+                    labels_2 = [self.labels_train_path[l] for l in idx_2]
+                    for i,j in zip(images_1,images_2):
+                        flows.append(run_flow_2_imgs(i,j))
+                # print("If statement image 1 " + str(images1))
+                # print("If statement image 2 " + str(images2))
+                # images = images_1 + images_2
+                # labels = labels_1 + labels_2
+                # flows = flows_1 + flows_2
+                self.train_ptr = self.train_ptr + batch_size
+                return images_1,images_2, labels_1,labels_2, flows
+                # print(self.images_train_path)
+                # idx = np.array(self.train_idx[self.train_ptr:self.train_ptr + batch_size])
+                # if self.store_memory:
+                #     images = [self.images_train[l] for l in idx]
+                #     labels = [self.labels_train[l] for l in idx]
+                #     flows = [self.flow_train[l] for l in idx]
+                #     paths = self.images_train_path[self.train_ptr:self.train_ptr + batch_size]
+                #     print("Paths are " + str(paths))
+                # else:
+                #     images = [self.images_train_path[l] for l in idx]
+                #     labels = [self.labels_train_path[l] for l in idx]
+                #     flows = [self.flow_train_path[l] for l in idx]
+                # self.train_ptr += batch_size
             else:
                 old_idx = np.array(self.train_idx[self.train_ptr:])
+                print("Old index is " +str(old_idx))
                 np.random.shuffle(self.train_idx)
                 new_ptr = (self.train_ptr + batch_size) % self.train_size
                 idx = np.array(self.train_idx[:new_ptr])
+                print("New index is " + str(idx))
                 if self.store_memory:
                     images_1 = [self.images_train[l] for l in old_idx]
                     labels_1 = [self.labels_train[l] for l in old_idx]
@@ -181,10 +221,13 @@ class Dataset:
                     labels_2 = [self.labels_train_path[l] for l in idx]
                     flows_1 = [self.flow_train_path[l] for l in idx]
                     flows_2 = [self.flow_train_path[l] for l in idx]
+                print("Else statement image 1 " + str(images1))
+                print("Else statement image 2 " + str(images2))
                 images = images_1 + images_2
                 labels = labels_1 + labels_2
                 flows = flows_1 + flows_2
                 self.train_ptr = new_ptr
+
             return images, labels, flows
         elif phase == 'test':
             images = None
