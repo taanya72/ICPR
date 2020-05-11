@@ -603,11 +603,13 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # img_height, img_width = 576, 720
     # img_height, img_width = 480, 854
     img_height, img_width = None, None
-    input_image = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
-    input_label = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
+    input_image_1 = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
+    input_image_2 = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 3])
+    input_label_1 = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
+    input_label_2 = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 1])
     input_flow = tf.placeholder(tf.float32, [batch_size, img_height, img_width, 2])
     # concat rgb and flow
-    rgb_flow_input = tf.concat([input_image, input_flow], 3, name='rgb_flow_input')
+    rgb_flow_input = tf.concat([input_image_1,input_image_2, input_flow], 3, name='rgb_flow_input')
 
     # Create the network
     if backbone == 'vgg':
@@ -635,16 +637,16 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # Define loss
     with tf.name_scope('losses'):
         if supervison == 1 or supervison == 2:
-            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'], input_label)
+            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'], input_label_1)
             tf.summary.scalar('dsn_2_loss', dsn_2_loss)
-            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'], input_label)
+            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'], input_label_1)
             tf.summary.scalar('dsn_3_loss', dsn_3_loss)
-            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'], input_label)
+            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'], input_label_1)
             tf.summary.scalar('dsn_4_loss', dsn_4_loss)
-            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'], input_label)
+            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'], input_label_1)
             tf.summary.scalar('dsn_5_loss', dsn_5_loss)
 
-        main_loss = class_balanced_cross_entropy_loss(net, input_label)
+        main_loss = class_balanced_cross_entropy_loss(net, input_label_1)
         tf.summary.scalar('main_loss', main_loss)
 
         if supervison == 1:
@@ -741,17 +743,19 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             # Average the gradient
             for _ in range(0, iter_mean_grad):
                 # list
-                batch_image, batch_label, batch_flow = dataset.next_batch(batch_size, 'train')
+                batch_image_1, batch_image_2, batch_label_1, batch_label_2, batch_flow = dataset.next_batch(batch_size, 'train')
                 # image shape (1, 576, 720, 3)
-                # image = np.stack(batch_image, axis=0)
+                #image = np.stack(batch_image, axis=0)
                 # label = np.stack(batch_label, axis=0)
                 # label = np.expand_dims(label, axis=-1)
                 #label = 1 - label
-                image = preprocess_img(batch_image)
-                label = preprocess_labels(batch_label)
+                image_1 = preprocess_img(batch_image_1)
+                image_2 = preprocess_img(batch_image_2)
+                label_1 = preprocess_labels(batch_label_1)
+                label_2 = preprocess_labels(batch_label_2)
                 flow = preprocess_flow(batch_flow)
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
-                                   feed_dict={input_image: image, input_label: label, input_flow: flow})
+                                   feed_dict={input_image_1: image_1, input_image_2: image_2, input_label_1: label_1, input_label_2: label_2, input_flow: flow})
                 batch_loss = run_res[0]
                 summary = run_res[1]
 
@@ -828,9 +832,10 @@ def test(dataset, checkpoint_file, result_path, config=None, backbone='vgg'):
 
     # Input data
     batch_size = 1
-    input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    input_image_1 = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    input_image_2 = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_flow = tf.placeholder(tf.float32, [batch_size, None, None, 2])
-    rgb_flow_input = tf.concat([input_image, input_flow], 3, name='rgb_flow_input')
+    rgb_flow_input = tf.concat([input_image_1,input_image_2, input_flow], 3, name='rgb_flow_input')
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
         if backbone == 'vgg':
